@@ -1,0 +1,39 @@
+{
+  "name": "nba-fantasy-league-bot",
+  "version": "1.0.0",
+  "description": "Complete NBA Fantasy League Discord Bot with CBA rules",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "import-roster": "node scripts/importRoster.js",
+    "deploy-commands": "node scripts/deployCommands.js",
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "nba",
+    "fantasy",
+    "basketball",
+    "league"
+  ],
+  "author": "scigliu82",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "firebase-admin": "^12.0.0",
+    "papaparse": "^5.4.1",
+    "xlsx": "^0.18.5",
+    "node-cron": "^3.0.3",
+    "dotenv": "^16.4.1",
+    "fuse.js": "^7.0.0",
+    "luxon": "^3.4.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
