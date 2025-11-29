@@ -22,13 +22,14 @@ async function initializeDatabase() {
 
     let serviceAccount;
 
-    // Try to load from file first
+   // Try to load from file first
     const serviceAccountPath = process.env.FIREBASE_SERVICE_ACCOUNT_PATH || 
                                 path.join(__dirname, '../../config/firebase-service-account.json');
 
     if (fs.existsSync(serviceAccountPath)) {
       console.log('📄 Loading Firebase credentials from file...');
-      serviceAccount = require(serviceAccountPath);
+      const fullPath = path.resolve(serviceAccountPath);
+      serviceAccount = require(fullPath);
     } else {
       // Load from environment variables
       console.log('🔐 Loading Firebase credentials from environment...');
