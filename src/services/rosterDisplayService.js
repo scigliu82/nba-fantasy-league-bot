@@ -153,8 +153,9 @@ function formatRosterPlayers(standardPlayers, twoWayPlayers) {
   const positionOrder = { 'PM': 1, 'G': 2, 'AG': 3, 'AP': 4, 'C': 5 };
   
   standardPlayers.sort((a, b) => {
-    const posA = a.position.split('/')[0].trim();
-    const posB = b.position.split('/')[0].trim();
+    // Gestisci position null/undefined/non-string
+    const posA = (typeof a.position === 'string' && a.position) ? a.position.split('/')[0].trim() : 'F';
+    const posB = (typeof b.position === 'string' && b.position) ? b.position.split('/')[0].trim() : 'F';
     
     const orderA = positionOrder[posA] || 99;
     const orderB = positionOrder[posB] || 99;
@@ -174,7 +175,7 @@ function formatRosterPlayers(standardPlayers, twoWayPlayers) {
   };
 
   for (const player of standardPlayers) {
-    const pos = player.position.split('/')[0].trim();
+    const pos = (typeof player.position === 'string' && player.position) ? player.position.split('/')[0].trim() : 'F';
     
     if (pos === 'PM' || pos === 'G') {
       groups.GUARDS.push(player);
@@ -200,7 +201,7 @@ function formatRosterPlayers(standardPlayers, twoWayPlayers) {
       const expiry = getContractExpiry(player.contract);
       const optionFlag = getOptionFlag(player.contract);
       
-      output += `• **${player.name}** (${player.position}, ${player.age}, OVR ${player.overall}) - ${formattedSalary}${expiry}${optionFlag}\n`;
+      output += `• **${player.name}** (${player.position || 'F'}, ${player.age}, OVR ${player.overall}) - ${formattedSalary}${expiry}${optionFlag}\n`;
     }
   }
 
@@ -209,7 +210,7 @@ function formatRosterPlayers(standardPlayers, twoWayPlayers) {
     output += `\n**TWO-WAY (${twoWayPlayers.length}/2):**\n`;
     
     for (const player of twoWayPlayers) {
-      output += `• **${player.name}** (${player.position}, ${player.age}, OVR ${player.overall})\n`;
+      output += `• **${player.name}** (${player.position || 'F'}, ${player.age}, OVR ${player.overall})\n`;
     }
   }
 

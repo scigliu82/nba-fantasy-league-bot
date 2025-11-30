@@ -72,6 +72,15 @@ async function importRoster() {
       for (const row of data) {
         if (!row.Name) continue; // Skip empty rows
         
+        // Skip summary rows (Salary Cap, etc)
+        if (row.Name && typeof row.Name === 'string' && 
+            (row.Name.toLowerCase().includes('salary') || 
+             row.Name.toLowerCase().includes('cap') ||
+             row.Name.toLowerCase().includes('spazio') ||
+             row.Name.toLowerCase().includes('posizione'))) {
+          continue;
+        }
+        
         const player = createPlayerFromRow(row, teamId, sheetName);
         
         if (player) {
