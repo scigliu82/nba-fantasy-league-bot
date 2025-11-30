@@ -205,16 +205,7 @@ function formatRosterPlayers(standardPlayers, twoWayPlayers) {
     }
   }
 
-  // Two-way players
-  if (twoWayPlayers.length > 0) {
-    output += `\n**TWO-WAY (${twoWayPlayers.length}/2):**\n`;
-    
-    for (const player of twoWayPlayers) {
-      output += `• **${player.name}** (${player.position || 'F'}, ${player.age}, OVR ${player.overall})\n`;
-    }
-  }
-
-  output += `\n**Total Roster: ${standardPlayers.length}/15 standard, ${twoWayPlayers.length}/2 two-way**`;
+  output += `\n**Total: ${standardPlayers.length} giocatori**`;
 
   return output || 'No players on roster';
 }
@@ -230,7 +221,7 @@ function getContractExpiry(contract) {
     
     if (year && year.status === 'signed' && year.salary > 0) {
       const expYear = season.split('-')[1];
-      return ` (exp ${expYear})`;
+      return ` (scad. 20${expYear})`;
     }
   }
   

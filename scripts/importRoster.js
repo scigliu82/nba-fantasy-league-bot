@@ -69,15 +69,25 @@ async function importRoster() {
 
       // Process players
       let playerCount = 0;
+      let skippedPlayers = [];
+      
       for (const row of data) {
-        if (!row.Name) continue; // Skip empty rows
+        if (!row.Name) {
+          skippedPlayers.push('(empty row)');
+          continue; // Skip empty rows
+        }
         
         // Skip summary rows (Salary Cap, etc)
+        // Use more specific patterns to avoid skipping players like "Capela"
+        const nameLower = row.Name.toLowerCase();
         if (row.Name && typeof row.Name === 'string' && 
-            (row.Name.toLowerCase().includes('salary') || 
-             row.Name.toLowerCase().includes('cap') ||
-             row.Name.toLowerCase().includes('spazio') ||
-             row.Name.toLowerCase().includes('posizione'))) {
+            (nameLower.includes('salary cap') || 
+             nameLower.includes('cap impegnato') ||
+             nameLower.includes('spazio salariale') ||
+             nameLower.includes('cap to luxury') ||
+             nameLower.includes('cap to apron') ||
+             nameLower.includes('posizione in classifica'))) {
+          skippedPlayers.push(`${row.Name} (summary row)`);
           continue;
         }
         
@@ -85,16 +95,32 @@ async function importRoster() {
         
         if (player) {
           allPlayers.push(player);
-          allTeams[teamId].roster.standard.push({
-            player_id: player.id,
-            acquired_date: '2025-10-01',
-            acquired_via: 'initial_roster',
-          });
+          
+          // Add to appropriate roster list
+          if (player.contract_type === 'two_way') {
+            allTeams[teamId].roster.two_way.push({
+              player_id: player.id,
+              acquired_date: '2025-10-01',
+              acquired_via: 'initial_roster',
+            });
+          } else {
+            allTeams[teamId].roster.standard.push({
+              player_id: player.id,
+              acquired_date: '2025-10-01',
+              acquired_via: 'initial_roster',
+            });
+          }
+          
           playerCount++;
+        } else {
+          skippedPlayers.push(`${row.Name} (createPlayer failed)`);
         }
       }
 
       console.log(`      ✅ ${playerCount} giocatori`);
+      if (skippedPlayers.length > 0) {
+        console.log(`      ⚠️  Skipped: ${skippedPlayers.join(', ')}`);
+      }
       totalPlayers += playerCount;
     }
 
@@ -308,8 +334,8 @@ function createPlayerFromRow(row, teamId, teamName) {
       }
     }
 
-    // Determine contract type (standard or two-way)
-    const contractType = (row.Ovr && row.Ovr < 70) ? 'two_way' : 'standard';
+    // Determine contract type - all standard for now (two-way will be handled separately)
+    const contractType = 'standard';
 
     return {
       id: playerId,
@@ -419,6 +445,62 @@ function processFreeAgents(workbook) {
   }
 
   return freeAgents;
+}
+
+// ───────────────────────────────────────────────────────
+// DATABASE CLEANUP
+// ───────────────────────────────────────────────────────
+
+async function clearDatabase() {
+  // Delete all players
+  const playersSnapshot = await collections.players().get();
+  if (!playersSnapshot.empty) {
+    const playerBatch = admin.firestore().batch();
+    let count = 0;
+    
+    playersSnapshot.docs.forEach(doc => {
+      playerBatch.delete(doc.ref);
+      count++;
+    });
+    
+    await playerBatch.commit();
+    console.log(`   • Deleted ${count} old players`);
+  }
+
+  // Delete all teams
+  const teamsSnapshot = await collections.teams().get();
+  if (!teamsSnapshot.empty) {
+    const teamBatch = admin.firestore().batch();
+    let count = 0;
+    
+    teamsSnapshot.docs.forEach(doc => {
+      teamBatch.delete(doc.ref);
+      count++;
+    });
+    
+    await teamBatch.commit();
+    console.log(`   • Deleted ${count} old teams`);
+  }
+
+  // Delete free agency data (optional - may not exist yet)
+  try {
+    const db = admin.firestore();
+    const faSnapshot = await db.collection('free_agency').get();
+    if (!faSnapshot.empty) {
+      const faBatch = admin.firestore().batch();
+      let count = 0;
+      
+      faSnapshot.docs.forEach(doc => {
+        faBatch.delete(doc.ref);
+        count++;
+      });
+      
+      await faBatch.commit();
+      console.log(`   • Deleted ${count} old free agency records`);
+    }
+  } catch (error) {
+    console.log(`   • Free agency collection not found (this is ok)`);
+  }
 }
 
 // ───────────────────────────────────────────────────────
