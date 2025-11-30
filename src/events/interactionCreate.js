@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════
-// INTERACTION CREATE EVENT - Handle slash commands
+// INTERACTION CREATE EVENT - Handle slash commands & autocomplete
 // ═══════════════════════════════════════════════════════
 
 const { Events } = require('discord.js');
@@ -8,7 +8,23 @@ module.exports = {
   name: Events.InteractionCreate,
   
   async execute(interaction) {
-    // Only handle slash commands
+    // Handle autocomplete
+    if (interaction.isAutocomplete()) {
+      const command = interaction.client.commands.get(interaction.commandName);
+
+      if (!command || !command.autocomplete) {
+        return;
+      }
+
+      try {
+        await command.autocomplete(interaction);
+      } catch (error) {
+        console.error(`❌ Error in autocomplete for ${interaction.commandName}:`, error);
+      }
+      return;
+    }
+
+    // Handle slash commands
     if (!interaction.isChatInputCommand()) return;
 
     const command = interaction.client.commands.get(interaction.commandName);

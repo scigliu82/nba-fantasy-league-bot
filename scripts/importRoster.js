@@ -1,19 +1,20 @@
 // ═══════════════════════════════════════════════════════
-// IMPORT ROSTER FROM CSV
+// IMPORT ROSTER FROM EXCEL - IBA LEAGUE FORMAT
 // ═══════════════════════════════════════════════════════
 
 require('dotenv').config();
-const fs = require('fs');
+const XLSX = require('xlsx');
 const path = require('path');
-const Papa = require('papaparse');
 const { initializeDatabase, collections, admin } = require('../src/database/firebase');
 
 // ───────────────────────────────────────────────────────
 // CONFIGURATION
 // ───────────────────────────────────────────────────────
 
-const CSV_PATH = path.join(__dirname, '../data/roster.csv');
-const BATCH_SIZE = 500; // Firestore limit
+const EXCEL_PATH = path.join(__dirname, '../data/Iba_League.xlsx');
+const BATCH_SIZE = 500;
+
+const SEASONS = ['2025-26', '2026-27', '2027-28', '2028-29', '2029-30', '2030-31'];
 
 // ───────────────────────────────────────────────────────
 // MAIN IMPORT FUNCTION
@@ -21,7 +22,7 @@ const BATCH_SIZE = 500; // Firestore limit
 
 async function importRoster() {
   console.log('═══════════════════════════════════════════════════════');
-  console.log('🏀 NBA FANTASY LEAGUE - ROSTER IMPORT');
+  console.log('🏀 NBA FANTASY LEAGUE - ROSTER IMPORT (EXCEL)');
   console.log('═══════════════════════════════════════════════════════\n');
 
   try {
@@ -30,114 +31,163 @@ async function importRoster() {
     await initializeDatabase();
     console.log('✅ Database connected\n');
 
-    // Check if CSV exists
-    if (!fs.existsSync(CSV_PATH)) {
-      throw new Error(`CSV file not found at: ${CSV_PATH}`);
-    }
+    // Load Excel file
+    console.log('📄 Loading Excel file...');
+    const workbook = XLSX.readFile(EXCEL_PATH);
+    console.log(`✅ Loaded workbook with ${workbook.SheetNames.length} sheets\n`);
 
-    // Read and parse CSV
-    console.log('📄 Reading CSV file...');
-    const csvContent = fs.readFileSync(CSV_PATH, 'utf8');
+    const allPlayers = [];
+    const allTeams = {};
+    let totalPlayers = 0;
+
+    // Process each team sheet
+    console.log('🏀 Processing team sheets...\n');
     
-    const parseResult = Papa.parse(csvContent, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (header) => header.trim(),
-    });
-
-    if (parseResult.errors.length > 0) {
-      console.error('⚠️  CSV parsing errors:', parseResult.errors);
-    }
-
-    const rows = parseResult.data;
-    console.log(`✅ Parsed ${rows.length} rows\n`);
-
-    // Separate players and teams
-    const players = [];
-    const teams = {};
-
-    console.log('🔍 Processing rows...');
-    
-    for (const row of rows) {
-      const team = normalizeTeamName(row.Team);
-      
-      // Initialize team if not exists
-      if (!teams[team]) {
-        teams[team] = initializeTeam(row.Team);
+    for (const sheetName of workbook.SheetNames) {
+      // Skip non-team sheets
+      if (sheetName === 'Backup Registry' || sheetName === 'Free Agents 2025') {
+        continue;
       }
 
-      // Create player object
-      const player = createPlayerFromRow(row, team);
+      console.log(`   📋 Processing: ${sheetName}...`);
       
-      if (player) {
-        players.push(player);
-        teams[team].roster.standard.push({
-          player_id: player.id,
-          acquired_date: '2025-10-01',
-          acquired_via: 'initial_roster',
-        });
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+
+      if (data.length === 0) {
+        console.log(`      ⚠️  Empty sheet, skipping`);
+        continue;
       }
+
+      // Get team ID
+      const teamId = normalizeTeamName(sheetName);
+      
+      // Initialize team
+      if (!allTeams[teamId]) {
+        allTeams[teamId] = initializeTeam(sheetName, teamId);
+      }
+
+      // Process players
+      let playerCount = 0;
+      for (const row of data) {
+        if (!row.Name) continue; // Skip empty rows
+        
+        const player = createPlayerFromRow(row, teamId, sheetName);
+        
+        if (player) {
+          allPlayers.push(player);
+          allTeams[teamId].roster.standard.push({
+            player_id: player.id,
+            acquired_date: '2025-10-01',
+            acquired_via: 'initial_roster',
+          });
+          playerCount++;
+        }
+      }
+
+      console.log(`      ✅ ${playerCount} giocatori`);
+      totalPlayers += playerCount;
     }
 
-    console.log(`✅ Processed ${players.length} players`);
-    console.log(`✅ Processed ${Object.keys(teams).length} teams\n`);
+    console.log(`\n✅ Total teams processed: ${Object.keys(allTeams).length}`);
+    console.log(`✅ Total players processed: ${totalPlayers}\n`);
+
+    // Process Free Agents
+    console.log('👥 Processing Free Agents 2025...\n');
+    const freeAgents = processFreeAgents(workbook);
+    console.log(`✅ Processed ${freeAgents.length} free agents\n`);
+
+    // Add free agents to allPlayers
+    allPlayers.push(...freeAgents);
 
     // Import to database
     console.log('📤 Importing to database...\n');
 
     // Import teams
     console.log('📋 Importing teams...');
-    await importTeams(teams);
-    console.log(`✅ Imported ${Object.keys(teams).length} teams\n`);
+    await importTeams(allTeams);
+    console.log(`✅ Imported ${Object.keys(allTeams).length} teams\n`);
 
-    // Import players (in batches)
+    // Import players
     console.log('👥 Importing players...');
-    await importPlayers(players);
-    console.log(`✅ Imported ${players.length} players\n`);
+    await importPlayers(allPlayers);
+    console.log(`✅ Imported ${allPlayers.length} players\n`);
 
     // Initialize season
-    console.log('📅 Initializing season...');
+    console.log('📅 Initializing season 2025-26...');
     await initializeSeason();
     console.log('✅ Season initialized\n');
+
+    // Create Free Agency collection
+    console.log('🆓 Setting up Free Agency 2025-26...');
+    await setupFreeAgency(freeAgents);
+    console.log('✅ Free Agency setup complete\n');
 
     console.log('═══════════════════════════════════════════════════════');
     console.log('✅ IMPORT COMPLETED SUCCESSFULLY!');
     console.log('═══════════════════════════════════════════════════════');
+    console.log(`\n📊 SUMMARY:`);
+    console.log(`   • Teams: ${Object.keys(allTeams).length}`);
+    console.log(`   • Players with contracts: ${totalPlayers}`);
+    console.log(`   • Free Agents: ${freeAgents.length}`);
+    console.log(`   • Total players: ${allPlayers.length}\n`);
 
     process.exit(0);
 
   } catch (error) {
     console.error('\n❌ IMPORT FAILED:', error.message);
-    console.error(error);
+    console.error(error.stack);
     process.exit(1);
   }
 }
 
 // ───────────────────────────────────────────────────────
-// HELPER FUNCTIONS
+// TEAM HELPERS
 // ───────────────────────────────────────────────────────
 
-function normalizeTeamName(teamName) {
-  // Convert "Los Angeles Lakers" → "lakers"
-  return teamName
-    .toLowerCase()
-    .split(' ')
-    .pop() // Get last word (team name)
-    .replace(/[^a-z0-9]/g, '');
+function normalizeTeamName(fullName) {
+  // "Atlanta Hawks" → "hawks"
+  // "Los Angeles Lakers" → "lakers"
+  const teamMap = {
+    'Atlanta Hawks': 'hawks',
+    'Boston Celtics': 'celtics',
+    'Brooklyn Nets': 'nets',
+    'Charlotte Hornets': 'hornets',
+    'Chicago Bulls': 'bulls',
+    'Cleveland Cavaliers': 'cavaliers',
+    'Dallas Mavericks': 'mavericks',
+    'Denver Nuggets': 'nuggets',
+    'Detroit Pistons': 'pistons',
+    'Golden State Warriors': 'warriors',
+    'Houston Rockets': 'rockets',
+    'Indiana Pacers': 'pacers',
+    'Los Angeles Clippers': 'clippers',
+    'Los Angeles Lakers': 'lakers',
+    'Memphis Grizzlies': 'grizzlies',
+    'Miami Heat': 'heat',
+    'Milwaukee Bucks': 'bucks',
+    'Minnesota Timberwolves': 'timberwolves',
+    'New Orleans Pelicans': 'pelicans',
+    'New York Knicks': 'knicks',
+    'Oklahoma City Thunder': 'thunder',
+    'Orlando Magic': 'magic',
+    'Philadelphia 76ers': 'sixers',
+    'Phoenix Suns': 'suns',
+    'Portland Trail Blazers': 'blazers',
+    'Sacramento Kings': 'kings',
+    'San Antonio Spurs': 'spurs',
+    'Toronto Raptors': 'raptors',
+    'Utah Jazz': 'jazz',
+    'Washington Wizards': 'wizards',
+  };
+
+  return teamMap[fullName] || fullName.toLowerCase().split(' ').pop();
 }
 
-function initializeTeam(fullName) {
-  const teamId = normalizeTeamName(fullName);
-  
-  // Parse city and name
-  const parts = fullName.split(' ');
-  const name = parts.pop();
-  const city = parts.join(' ');
-
+function initializeTeam(fullName, teamId) {
   return {
     _id: teamId,
     name: fullName,
-    city: city,
     abbreviation: getTeamAbbreviation(teamId),
     conference: getTeamConference(teamId),
     division: getTeamDivision(teamId),
@@ -160,101 +210,129 @@ function initializeTeam(fullName) {
     },
     
     salary: {},
+    draft_picks: {},
     
     gm: null,
-    
     waiver_priority: 0,
   };
 }
 
-function createPlayerFromRow(row, team) {
+// ───────────────────────────────────────────────────────
+// PLAYER CREATION
+// ───────────────────────────────────────────────────────
+
+function createPlayerFromRow(row, teamId, teamName) {
   try {
-    const playerId = row.Nome
+    // Generate player ID
+    const playerId = row.Name
       .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
       .replace(/[^a-z0-9\s]/g, '')
       .replace(/\s+/g, '_');
 
     // Parse contract
     const contract = {};
-    const seasons = ['2025-26', '2026-27', '2027-28', '2028-29', '2029-30', '2030-31'];
     
-    for (const season of seasons) {
-      const salaryStr = row[season];
+    for (let i = 0; i < SEASONS.length; i++) {
+      const season = SEASONS[i];
+      const salaryValue = row[season];
       
-      if (!salaryStr || salaryStr === 'UFA' || salaryStr === 'RFA') {
+      if (!salaryValue) {
+        // No value = UFA
         contract[season] = {
           salary: 0,
-          status: salaryStr || 'UFA'
+          status: 'UFA'
         };
-      } else {
+      } else if (typeof salaryValue === 'string') {
+        const salaryStr = salaryValue.toLowerCase().trim();
+        
+        if (salaryStr === 'player option') {
+          // Player option - use salary from previous year
+          const prevSeason = SEASONS[i - 1];
+          const prevSalary = contract[prevSeason]?.salary || 0;
+          
+          contract[season] = {
+            salary: prevSalary,
+            guaranteed: false,
+            player_option: true,
+            team_option: false,
+            status: 'option'
+          };
+        } else if (salaryStr === 'team option') {
+          // Team option
+          const prevSeason = SEASONS[i - 1];
+          const prevSalary = contract[prevSeason]?.salary || 0;
+          
+          contract[season] = {
+            salary: prevSalary,
+            guaranteed: false,
+            player_option: false,
+            team_option: true,
+            status: 'option'
+          };
+        } else if (salaryStr === 'rfa') {
+          contract[season] = {
+            salary: 0,
+            status: 'RFA'
+          };
+        } else if (salaryStr === 'ufa') {
+          contract[season] = {
+            salary: 0,
+            status: 'UFA'
+          };
+        } else {
+          // Unknown string value, treat as UFA
+          contract[season] = {
+            salary: 0,
+            status: 'UFA'
+          };
+        }
+      } else if (typeof salaryValue === 'number') {
+        // Numeric salary
         contract[season] = {
-          salary: parseInt(salaryStr.replace(/[^0-9]/g, '')),
+          salary: Math.round(salaryValue),
           guaranteed: true,
+          player_option: false,
+          team_option: false,
           status: 'signed'
         };
       }
     }
 
-    // Parse options
-    let optionType = null;
-    let optionYear = null;
-    
-    if (row.Option_Type && row.Option_Year) {
-      optionType = row.Option_Type.toLowerCase();
-      optionYear = parseInt(row.Option_Year);
-      
-      if (optionYear >= 1 && optionYear <= 6) {
-        const season = seasons[optionYear - 1];
-        if (contract[season]) {
-          contract[season].player_option = (optionType === 'po');
-          contract[season].team_option = (optionType === 'to');
-        }
-      }
-    }
+    // Determine contract type (standard or two-way)
+    const contractType = (row.Ovr && row.Ovr < 70) ? 'two_way' : 'standard';
 
     return {
       id: playerId,
-      name: row.Nome,
-      first_name: row.Nome.split(' ')[0],
-      last_name: row.Nome.split(' ').slice(1).join(' '),
+      name: row.Name,
       
-      position: row.Posizione,
-      age: parseInt(row.Età),
-      overall: parseInt(row.Overall),
-      experience_years: parseInt(row.Esperienza),
+      position: row.Pos || 'F',
+      age: Math.round(row.Age) || 25,
+      overall: Math.round(row.Ovr) || 70,
+      experience_years: Math.round(row.Exp) || 0,
       
-      current_team: team,
-      contract_type: row.Contract_Type || 'standard',
+      current_team: teamId,
+      contract_type: contractType,
       
       contract: contract,
       
       bird_rights: {
-        years: parseInt(row.Bird_Rights) || 0,
-        status: getBirdRightsStatus(parseInt(row.Bird_Rights) || 0),
+        years: Math.round(row.Bird) || 0,
+        status: getBirdRightsStatus(Math.round(row.Bird) || 0),
         acquired_date: '2023-10-01'
       },
       
       personality: {
-        loyalty: parseInt(row.Loyalty) || 50,
-        money_importance: parseInt(row.Money_Importance) || 50,
-        win_desire: parseInt(row.Win_Desire) || 50
+        loyalty: Math.round(row.Fed) || 50,
+        money_importance: Math.round(row.Sal) || 50,
+        win_desire: Math.round(row.Win) || 50
       },
       
-      base_year_compensation: {
-        active: false,
-        signed_date: null,
-        previous_salary: 0
-      },
-      
-      rfa_status: {
-        is_rfa: false,
-        qualifying_offer: null,
-        original_team: null
-      }
+      draft_pick_info: row.Pick || null,
     };
 
   } catch (error) {
-    console.error(`⚠️  Error processing player: ${row.Nome}`, error.message);
+    console.error(`      ⚠️  Error processing player: ${row.Name}`, error.message);
     return null;
   }
 }
@@ -265,6 +343,78 @@ function getBirdRightsStatus(years) {
   if (years === 1) return 'non';
   return 'none';
 }
+
+// ───────────────────────────────────────────────────────
+// FREE AGENTS PROCESSING
+// ───────────────────────────────────────────────────────
+
+function processFreeAgents(workbook) {
+  const sheet = workbook.Sheets['Free Agents 2025'];
+  if (!sheet) {
+    console.log('   ⚠️  No Free Agents sheet found');
+    return [];
+  }
+
+  const data = XLSX.utils.sheet_to_json(sheet);
+  const freeAgents = [];
+
+  for (const row of data) {
+    if (!row.Nome) continue;
+
+    const playerId = row.Nome
+      .toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, '')
+      .replace(/\s+/g, '_');
+
+    // Create contract with UFA status for all years
+    const contract = {};
+    for (const season of SEASONS) {
+      contract[season] = {
+        salary: 0,
+        status: 'UFA'
+      };
+    }
+
+    const player = {
+      id: playerId,
+      name: row.Nome,
+      
+      position: row.Ruolo || 'F',
+      age: Math.round(row['Età']) || 25,
+      overall: Math.round(row.Overall) || 70,
+      experience_years: Math.round(row.Esperienza) || 0,
+      
+      current_team: null,
+      contract_type: 'standard',
+      
+      contract: contract,
+      
+      bird_rights: {
+        years: 0,
+        status: 'none',
+        acquired_date: null
+      },
+      
+      personality: {
+        loyalty: Math.round(row['Fedeltà']) || 50,
+        money_importance: Math.round(row['Money Imp']) || 50,
+        win_desire: Math.round(row['Win Imp']) || 50
+      },
+      
+      team_interest: row['Gradimento Team'] || null,
+      notes: row.Note || null,
+    };
+
+    freeAgents.push(player);
+  }
+
+  return freeAgents;
+}
+
+// ───────────────────────────────────────────────────────
+// DATABASE IMPORT
+// ───────────────────────────────────────────────────────
 
 async function importTeams(teams) {
   const batch = admin.firestore().batch();
@@ -296,26 +446,23 @@ async function importPlayers(players) {
     currentBatch.set(ref, player);
     operationCount++;
 
-    // Firestore batch limit is 500
     if (operationCount === BATCH_SIZE) {
       batches.push(currentBatch);
       currentBatch = admin.firestore().batch();
       operationCount = 0;
     }
 
-    if ((i + 1) % 50 === 0) {
+    if ((i + 1) % 100 === 0) {
       console.log(`   • Processed ${i + 1}/${players.length} players`);
     }
   }
 
-  // Add remaining operations
   if (operationCount > 0) {
     batches.push(currentBatch);
   }
 
   console.log(`   • Committing ${batches.length} batch(es)...`);
 
-  // Commit all batches
   for (let i = 0; i < batches.length; i++) {
     await batches[i].commit();
     console.log(`   • Committed batch ${i + 1}/${batches.length}`);
@@ -328,10 +475,10 @@ async function initializeSeason() {
     current: true,
     status: 'not_started',
     
-    salary_cap: parseInt(process.env.SALARY_CAP),
-    luxury_tax: parseInt(process.env.LUXURY_TAX),
-    first_apron: parseInt(process.env.FIRST_APRON),
-    second_apron: parseInt(process.env.SECOND_APRON),
+    salary_cap: 154647000,
+    luxury_tax: 187895000,
+    first_apron: 195945000,
+    second_apron: 207824000,
     
     trade_deadline: null,
     schedule_format: 58,
@@ -343,20 +490,49 @@ async function initializeSeason() {
   await collections.seasons().doc('2025-26').set(seasonData);
 }
 
+async function setupFreeAgency(freeAgents) {
+  const faData = {
+    id: 'fa_2025_26',
+    year: 2026,
+    status: 'not_started',
+    mode: 'journeys',
+    
+    current_journey: null,
+    
+    free_agents: freeAgents.map(fa => ({
+      player_id: fa.id,
+      type: 'UFA',
+      status: 'available',
+      original_team: null,
+      offers: []
+    })),
+    
+    statistics: {
+      total_fas: freeAgents.length,
+      ufas: freeAgents.length,
+      rfas: 0,
+      signed: 0,
+      remaining: freeAgents.length
+    }
+  };
+
+  await collections.freeAgency().doc('fa_2025_26').set(faData);
+}
+
 // ───────────────────────────────────────────────────────
-// TEAM DATA (abbreviations, conferences, divisions)
+// TEAM DATA
 // ───────────────────────────────────────────────────────
 
 function getTeamAbbreviation(teamId) {
   const abbr = {
-    lakers: 'LAL', warriors: 'GSW', celtics: 'BOS', heat: 'MIA',
-    bucks: 'MIL', nets: 'BKN', sixers: 'PHI', knicks: 'NYK',
-    raptors: 'TOR', bulls: 'CHI', cavaliers: 'CLE', pistons: 'DET',
-    pacers: 'IND', hawks: 'ATL', hornets: 'CHA', magic: 'ORL',
-    wizards: 'WAS', nuggets: 'DEN', thunder: 'OKC', timberwolves: 'MIN',
-    blazers: 'POR', jazz: 'UTA', mavericks: 'DAL', rockets: 'HOU',
-    grizzlies: 'MEM', pelicans: 'NOP', spurs: 'SAS', suns: 'PHX',
-    kings: 'SAC', clippers: 'LAC'
+    hawks: 'ATL', celtics: 'BOS', nets: 'BKN', hornets: 'CHA',
+    bulls: 'CHI', cavaliers: 'CLE', mavericks: 'DAL', nuggets: 'DEN',
+    pistons: 'DET', warriors: 'GSW', rockets: 'HOU', pacers: 'IND',
+    clippers: 'LAC', lakers: 'LAL', grizzlies: 'MEM', heat: 'MIA',
+    bucks: 'MIL', timberwolves: 'MIN', pelicans: 'NOP', knicks: 'NYK',
+    thunder: 'OKC', magic: 'ORL', sixers: 'PHI', suns: 'PHX',
+    blazers: 'POR', kings: 'SAC', spurs: 'SAS', raptors: 'TOR',
+    jazz: 'UTA', wizards: 'WAS'
   };
   return abbr[teamId] || teamId.toUpperCase().slice(0, 3);
 }
