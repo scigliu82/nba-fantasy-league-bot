@@ -1,5 +1,4 @@
 const { ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } = require('discord.js');
-const admin = require('firebase-admin');
 
 // Team colors
 const TEAM_COLORS = {
@@ -75,7 +74,8 @@ const TEAM_EMOJI = {
  * @returns {Object} - Oggetto con embeds e components per Discord
  */
 async function generateControlPanel(teamId) {
-  const db = admin.firestore();
+  const { getDatabase } = require('../database/firebase');
+  const db = getDatabase();
   
   // Fetch team data
   const teamDoc = await db.collection('teams').doc(teamId).get();
@@ -123,23 +123,22 @@ async function generateControlPanel(teamId) {
         .setEmoji('📋')
     );
   
-  // Row 2: Trade Operations (🚧 COMING SOON)
+  // Row 2: Trade Operations
   const row2 = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
-        .setCustomId(`cp_propose_trade_${teamId}`)
+        .setCustomId(`cp_propose_trade`)
         .setLabel('Propose Trade')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('🔄')
-        .setDisabled(true),
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('🔄'),
       new ButtonBuilder()
-        .setCustomId(`cp_view_trades_${teamId}`)
+        .setCustomId(`cp_view_trade_offers`)
         .setLabel('View Trade Offers')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('📨')
         .setDisabled(true),
       new ButtonBuilder()
-        .setCustomId(`cp_trade_history_${teamId}`)
+        .setCustomId(`cp_trade_history`)
         .setLabel('Trade History')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('📜')
