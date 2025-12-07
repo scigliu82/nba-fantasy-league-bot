@@ -164,6 +164,7 @@ async function setupServer(interaction) {
       { name: '📰-announcements', topic: 'Important league announcements', readOnly: true },
       { name: '💬-general-chat', topic: 'General discussion' },
       { name: '📊-standings', topic: 'Current league standings' },
+      { name: '📅-calendario', topic: 'Season schedule and results' },
       { name: '🔄-trade-block', topic: 'Discuss trades and view active trade proposals' },
       { name: '👥-free-agency', topic: 'Free agency discussions and signings' },
       { name: '⚠️-waiver-wire', topic: 'Waiver claims and transactions' },
@@ -270,7 +271,7 @@ ${progressMsg}
 **Created:**
 ✅ **31 roles** (1 Commissioner + 30 GM roles)
 ✅ **3 categories** (Public, Team HQ, Admin)
-✅ **38 channels** (7 public + 30 team + 1 admin)
+✅ **39 channels** (8 public + 30 team + 1 admin)
 
 **Roles created:**
 - @Commissioner (admin)
@@ -278,7 +279,7 @@ ${progressMsg}
 
 **Public channels:**
 📜 rules | 📰 announcements | 💬 general-chat
-📊 standings | 🔄 trade-block | 👥 free-agency | ⚠️ waiver-wire
+📊 standings | 📅 calendario | 🔄 trade-block | 👥 free-agency | ⚠️ waiver-wire
 
 **Team channels:** (private for each GM)
 🏀 30 team HQ channels
