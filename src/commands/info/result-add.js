@@ -169,20 +169,42 @@ async function addResult(interaction) {
     const game = games[gameIndex];
 
     // ─────────────────────────────────────────────────────
-    // STEP 3: Check if already played
+    // STEP 3: Check if already played (BLOCK re-entry)
     // ─────────────────────────────────────────────────────
 
     if (game.played) {
-      await interaction.editReply(
-        `⚠️ **Game already played!**\n\n` +
-        `**Previous result:** ${formatTeamName(homeTeam)} ${game.home_score} - ${game.away_score} ${formatTeamName(awayTeam)}\n` +
-        `**New result:** ${formatTeamName(homeTeam)} ${homeScore} - ${awayScore} ${formatTeamName(awayTeam)}\n\n` +
-        `The result will be updated.`
-      );
+      const resultEmbed = new EmbedBuilder()
+        .setTitle('❌ GAME ALREADY PLAYED')
+        .setColor(0xFF0000)
+        .setDescription(
+          `**Round ${round}**\n\n` +
+          `${formatTeamName(homeTeam)} **${game.home_score}** - **${game.away_score}** ${formatTeamName(awayTeam)}`
+        )
+        .addFields(
+          { 
+            name: '⚠️ Result Already Exists', 
+            value: 'This game already has a recorded result. To prevent errors, you cannot overwrite it directly.',
+            inline: false
+          },
+          { 
+            name: '🔧 How to Change the Result', 
+            value: 
+              `**Step 1:** Ask an admin to clear the current result:\n` +
+              `\`/clear_result round:${round} home_team:${homeTeam} away_team:${awayTeam}\`\n\n` +
+              `**Step 2:** After clearing, enter the new result:\n` +
+              `\`/result add round:${round} home_team:${homeTeam} away_team:${awayTeam} home_score:${homeScore} away_score:${awayScore}\``,
+            inline: false
+          }
+        )
+        .setFooter({ text: 'Only admins can clear results to prevent accidental changes' });
+
+      await interaction.editReply({ embeds: [resultEmbed] });
+      return; // STOP - non continua!
     }
 
     // ─────────────────────────────────────────────────────
     // STEP 4: Update game result
+    // ─────────────────────────────────────────────────────
     // ─────────────────────────────────────────────────────
 
     games[gameIndex] = {
@@ -199,11 +221,20 @@ async function addResult(interaction) {
     });
 
     // ─────────────────────────────────────────────────────
-    // STEP 5: Update standings (will be implemented)
+    // STEP 5: Update standings
     // ─────────────────────────────────────────────────────
 
-    // TODO: Calculate and update standings
-    // await updateStandings(season, homeTeam, awayTeam, homeScore, awayScore);
+    const { updateStandings } = require('../../services/standingsService');
+    const { refreshStandingsEmbeds } = require('../../services/standingsDisplayService');
+
+    try {
+      await updateStandings(season, homeTeam, awayTeam, homeScore, awayScore);
+      await refreshStandingsEmbeds(season, interaction.guild);
+      console.log('✅ Standings updated successfully');
+    } catch (error) {
+      console.error('⚠️ Failed to update standings:', error.message);
+      // Non blocca l'inserimento risultato se standings fallisce
+    }
 
     // ─────────────────────────────────────────────────────
     // STEP 6: Send confirmation

@@ -70,14 +70,14 @@ async function setupSchedule(interaction) {
 
   try {
     // ─────────────────────────────────────────────────────
-    // STEP 1: Verify file exists
+    // STEP 1: Initial message
     // ─────────────────────────────────────────────────────
     
-    let progressMsg = '📅 **SETTING UP SEASON SCHEDULE**\n\n';
+    let progressMsg = '⏳ **SETTING UP SEASON SCHEDULE**\n\n';
     progressMsg += `**Season:** ${season}\n`;
     progressMsg += `**Format:** ${format} games per team\n`;
     progressMsg += `**File:** \`${filePath}\`\n\n`;
-    progressMsg += '**Step 1/4:** Verifying file... ⏳';
+    progressMsg += 'Please wait, this may take 30-60 seconds...';
     
     await interaction.editReply(progressMsg);
 
@@ -91,9 +91,7 @@ async function setupSchedule(interaction) {
       return;
     }
 
-    progressMsg = progressMsg.replace('Verifying file... ⏳', 'Verifying file... ✅');
-    progressMsg += '\n**Step 2/4:** Importing schedule... ⏳';
-    await interaction.editReply(progressMsg);
+    console.log('✅ Step 1/5: File exists');
 
     // ─────────────────────────────────────────────────────
     // STEP 2: Run import script
@@ -111,10 +109,7 @@ async function setupSchedule(interaction) {
     }
     
     console.log('Script output:', stdout);
-
-    progressMsg = progressMsg.replace('Importing schedule... ⏳', 'Importing schedule... ✅');
-    progressMsg += '\n**Step 3/4:** Fetching schedule data... ⏳';
-    await interaction.editReply(progressMsg);
+    console.log('✅ Step 2/5: Schedule imported');
 
     // ─────────────────────────────────────────────────────
     // STEP 3: Fetch schedule from database
@@ -131,10 +126,7 @@ async function setupSchedule(interaction) {
     }
     
     const scheduleData = scheduleDoc.data();
-
-    progressMsg = progressMsg.replace('Fetching schedule data... ⏳', 'Fetching schedule data... ✅');
-    progressMsg += '\n**Step 4/4:** Publishing in #📅-calendario... ⏳';
-    await interaction.editReply(progressMsg);
+    console.log('✅ Step 3/5: Schedule fetched from database');
 
     // ─────────────────────────────────────────────────────
     // STEP 4: Publish in #calendario channel
@@ -149,8 +141,37 @@ async function setupSchedule(interaction) {
     } else {
       await publishSchedule(calendarioChannel, scheduleData, season);
     }
+    
+    console.log('✅ Step 4/5: Calendar published');
 
-    progressMsg = progressMsg.replace('Publishing in #📅-calendario... ⏳', 'Publishing in #📅-calendario... ✅');
+    // ─────────────────────────────────────────────────────
+    // STEP 5: Initialize standings and publish
+    // ─────────────────────────────────────────────────────
+
+    const { initializeStandings } = require('../../services/standingsService');
+    const { publishStandingsEmbeds } = require('../../services/standingsDisplayService');
+
+    let standingsStatus = 'initialized';
+
+    try {
+      await initializeStandings(season);
+      console.log('✅ Standings initialized for all 30 teams');
+      
+      const standingsChannel = interaction.guild.channels.cache.find(ch => 
+        ch.name === '📊-standings' || ch.name.includes('standings')
+      );
+      
+      if (standingsChannel) {
+        await publishStandingsEmbeds(standingsChannel, season);
+        console.log('✅ Step 5/5: Published 9 standings embeds');
+      } else {
+        console.warn('⚠️  #standings channel not found, skipping publication');
+        standingsStatus = 'channel_not_found';
+      }
+    } catch (error) {
+      console.error('⚠️ Failed to initialize standings:', error.message);
+      standingsStatus = 'error';
+    }
 
     // ─────────────────────────────────────────────────────
     // DONE!
@@ -164,15 +185,13 @@ async function setupSchedule(interaction) {
         { name: '📊 Format', value: `${scheduleData.format} games per team`, inline: true },
         { name: '🎯 Total Games', value: `${scheduleData.total_games} games`, inline: true },
         { name: '🔄 Rounds', value: `${scheduleData.rounds} rounds`, inline: true },
-        { name: '📅 Published In', value: calendarioChannel ? `<#${calendarioChannel.id}>` : 'Not published', inline: false }
+        { name: '📅 Calendar', value: calendarioChannel ? `Published in <#${calendarioChannel.id}>` : '⚠️ Not published', inline: false },
+        { name: '📊 Standings', value: standingsStatus === 'initialized' ? '✅ 9 classifications created' : (standingsStatus === 'channel_not_found' ? '⚠️ Channel not found' : '⚠️ Error'), inline: false }
       )
       .setFooter({ text: 'Use /result add to start entering game results' })
       .setTimestamp();
 
-    await interaction.editReply({
-      content: progressMsg,
-      embeds: [successEmbed]
-    });
+    await interaction.editReply({ embeds: [successEmbed] });
 
   } catch (error) {
     console.error('❌ Error setting up schedule:', error);
