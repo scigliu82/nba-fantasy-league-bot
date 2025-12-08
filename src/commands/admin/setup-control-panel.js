@@ -115,7 +115,7 @@ module.exports = {
       }
       
       // Genera nuovo control panel
-      const panelMessage = await generateControlPanel(teamId);
+      const panelMessage = await generateControlPanel(teamId, guild);
       
       // Posta messaggio nel canale
       const message = await channel.send(panelMessage);
