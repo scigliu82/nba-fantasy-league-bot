@@ -73,7 +73,7 @@ const TEAM_EMOJI = {
  * @param {string} teamId - ID del team (es. "lakers")
  * @returns {Object} - Oggetto con embeds e components per Discord
  */
-async function generateControlPanel(teamId, guild = null) {
+async function generateControlPanel(teamId) {
   const { getDatabase } = require('../database/firebase');
   const db = getDatabase();
   
@@ -85,30 +85,6 @@ async function generateControlPanel(teamId, guild = null) {
   }
   
   const team = teamDoc.data();
-  
-  // Find league channels for quick links
-  let standingsChannelId = null;
-  let calendarioChannelId = null;
-  let announcementsChannelId = null;
-  let guildId = null;
-  
-  if (guild) {
-    guildId = guild.id;
-    
-    const standingsChannel = guild.channels.cache.find(ch => 
-      ch.name === '📊-standings' || ch.name.includes('standings')
-    );
-    const calendarioChannel = guild.channels.cache.find(ch => 
-      ch.name === '📅-calendario' || ch.name.includes('calendario')
-    );
-    const announcementsChannel = guild.channels.cache.find(ch => 
-      ch.name === '📰-announcements' || ch.name.includes('announcements')
-    );
-    
-    if (standingsChannel) standingsChannelId = standingsChannel.id;
-    if (calendarioChannel) calendarioChannelId = calendarioChannel.id;
-    if (announcementsChannel) announcementsChannelId = announcementsChannel.id;
-  }
   
   // Create embed
   const embed = new EmbedBuilder()
@@ -169,27 +145,24 @@ async function generateControlPanel(teamId, guild = null) {
         .setDisabled(true)
     );
   
-  // Row 3: Free Agency (🚧 COMING SOON)
+  // Row 3: Free Agency (✅ ACTIVE)
   const row3 = new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
         .setCustomId(`cp_make_fa_offer_${teamId}`)
         .setLabel('Make FA Offer')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('✍️')
-        .setDisabled(true),
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('✍️'),
       new ButtonBuilder()
         .setCustomId(`cp_view_fa_offers_${teamId}`)
         .setLabel('View My Offers')
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji('📝')
-        .setDisabled(true),
+        .setStyle(ButtonStyle.Primary)
+        .setEmoji('📝'),
       new ButtonBuilder()
         .setCustomId(`cp_fa_market_${teamId}`)
         .setLabel('FA Market')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Primary)
         .setEmoji('🏪')
-        .setDisabled(true)
     );
   
   // Row 4: Contract Management (🚧 COMING SOON)
@@ -215,61 +188,21 @@ async function generateControlPanel(teamId, guild = null) {
         .setDisabled(true)
     );
   
-  
-  // Row 5: League Info (QUICK LINKS)
-  const row5 = new ActionRowBuilder();
-  
-  // Button 1: Standings
-  if (standingsChannelId && guildId) {
-    row5.addComponents(
-      new ButtonBuilder()
-        .setLabel('Standings')
-        .setStyle(ButtonStyle.Link)
-        .setEmoji('📈')
-        .setURL(`https://discord.com/channels/${guildId}/${standingsChannelId}`)
-    );
-  } else {
-    row5.addComponents(
+  // Row 5: League Info (MISTO)
+  const row5 = new ActionRowBuilder()
+    .addComponents(
       new ButtonBuilder()
         .setCustomId(`cp_standings_${teamId}`)
         .setLabel('Standings')
-        .setStyle(ButtonStyle.Secondary)
+        .setStyle(ButtonStyle.Success)
         .setEmoji('📈')
-        .setDisabled(true)
-    );
-  }
-  
-  // Button 2: Schedule
-  if (calendarioChannelId && guildId) {
-    row5.addComponents(
-      new ButtonBuilder()
-        .setLabel('Schedule')
-        .setStyle(ButtonStyle.Link)
-        .setEmoji('📅')
-        .setURL(`https://discord.com/channels/${guildId}/${calendarioChannelId}`)
-    );
-  } else {
-    row5.addComponents(
+        .setDisabled(true), // Per ora disabilitato, attiveremo dopo
       new ButtonBuilder()
         .setCustomId(`cp_schedule_${teamId}`)
         .setLabel('Schedule')
         .setStyle(ButtonStyle.Secondary)
         .setEmoji('📅')
-        .setDisabled(true)
-    );
-  }
-  
-  // Button 3: League News
-  if (announcementsChannelId && guildId) {
-    row5.addComponents(
-      new ButtonBuilder()
-        .setLabel('League News')
-        .setStyle(ButtonStyle.Link)
-        .setEmoji('📰')
-        .setURL(`https://discord.com/channels/${guildId}/${announcementsChannelId}`)
-    );
-  } else {
-    row5.addComponents(
+        .setDisabled(true),
       new ButtonBuilder()
         .setCustomId(`cp_league_news_${teamId}`)
         .setLabel('League News')
@@ -277,7 +210,6 @@ async function generateControlPanel(teamId, guild = null) {
         .setEmoji('📰')
         .setDisabled(true)
     );
-  }
   
   return {
     embeds: [embed],

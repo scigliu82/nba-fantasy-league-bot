@@ -2,7 +2,7 @@
 // INTERACTION CREATE EVENT - Handle slash commands & autocomplete
 // ═══════════════════════════════════════════════════════
 
-const { Events } = require('discord.js');
+const { Events, MessageFlags } = require('discord.js');
 
 // Map per memorizzare le selezioni temporanee dei trade
 // Struttura: tradeSelections.set('userTeamId_opponentTeamId', { send: [...], receive: [...] })
@@ -47,7 +47,7 @@ module.exports = {
         // Send error message to user
         const errorMessage = {
           content: '❌ There was an error executing this command!',
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         };
 
         if (interaction.replied || interaction.deferred) {
@@ -71,7 +71,7 @@ module.exports = {
           console.error('❌ Error handling control panel button:', error);
           await interaction.reply({
             content: '❌ An error occurred while processing your request.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
@@ -84,7 +84,7 @@ module.exports = {
           console.error('❌ Error handling trade action button:', error);
           await interaction.reply({
             content: '❌ An error occurred while processing your request.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
@@ -97,7 +97,7 @@ module.exports = {
           console.error('❌ Error handling trade response button:', error);
           await interaction.reply({
             content: '❌ An error occurred while processing your request.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
@@ -110,7 +110,7 @@ module.exports = {
           console.error('❌ Error handling trade button:', error);
           await interaction.reply({
             content: '❌ An error occurred while processing your request.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
@@ -161,7 +161,7 @@ module.exports = {
           if (!interaction.replied && !interaction.deferred) {
             await interaction.reply({
               content: '❌ An error occurred while processing your selection.',
-              ephemeral: true
+              flags: MessageFlags.Ephemeral
             });
           }
         }
@@ -182,7 +182,7 @@ module.exports = {
           console.error('❌ Error handling trade veto modal:', error);
           await interaction.reply({
             content: '❌ An error occurred while processing your veto.',
-            ephemeral: true
+            flags: MessageFlags.Ephemeral
           });
         }
       }
@@ -206,6 +206,14 @@ async function handleControlPanelButton(interaction) {
   const subaction = parts[2]; // "roster", "details", "trade", etc.
   const teamId = parts[parts.length - 1]; // "lakers", "celtics", etc.
   
+  // === SKIP FA BUTTONS (handled by dedicated handlers) ===
+  if (customId.startsWith('cp_fa_market_') || 
+      customId.startsWith('cp_make_fa_offer_') || 
+      customId.startsWith('cp_view_fa_offers_')) {
+    // Don't handle these - let cpFAButtonsHandler handle them
+    return;
+  }
+  
   // === BOTTONI FUNZIONANTI ===
   
   // View Full Roster
@@ -214,7 +222,7 @@ async function handleControlPanelButton(interaction) {
     const roster = await rosterService.generateRosterMessage(teamId);
     await interaction.reply({ 
       embeds: roster.embeds, 
-      ephemeral: true 
+      flags: MessageFlags.Ephemeral 
     });
     return;
   }
@@ -302,7 +310,7 @@ async function handleControlPanelButton(interaction) {
     
     await interaction.reply({
       content: response,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
     return;
   }
@@ -359,7 +367,7 @@ async function handleControlPanelButton(interaction) {
     
     await interaction.reply({
       content: response,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
     return;
   }
@@ -374,7 +382,7 @@ async function handleControlPanelButton(interaction) {
   // Tutti gli altri bottoni mostrano "Coming Soon"
   await interaction.reply({
     content: '🚧 **This feature is coming soon!**\n\nWe\'re working on implementing this functionality.',
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   });
 }
 
@@ -407,7 +415,7 @@ async function handleTradeActionButton(interaction) {
       if (!result.success) {
         return interaction.followUp({
           content: `❌ Failed to approve trade: ${result.error}`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
       
@@ -470,7 +478,7 @@ async function handleTradeActionButton(interaction) {
     console.error('❌ Error handling trade action:', error);
     await interaction.followUp({
       content: `❌ An error occurred: ${error.message}`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 }
@@ -500,7 +508,7 @@ async function handleTradeVetoModal(interaction) {
     if (!result.success) {
       return interaction.followUp({
         content: `❌ Failed to veto trade: ${result.error}`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -540,7 +548,7 @@ async function handleTradeVetoModal(interaction) {
     console.error('❌ Error vetoing trade:', error);
     await interaction.followUp({
       content: `❌ An error occurred: ${error.message}`,
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 }
@@ -561,7 +569,7 @@ async function handleProposeTrade(interaction) {
   if (!teamIdMatch) {
     return interaction.reply({
       content: '❌ Cannot determine your team from this channel.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
   
@@ -605,7 +613,7 @@ async function handleProposeTrade(interaction) {
   await interaction.reply({
     content: '🔄 **PROPOSE TRADE - Step 1/4**\n\n**Select Conference:**\nChoose which conference to trade with.',
     components: [row],
-    ephemeral: true
+    flags: MessageFlags.Ephemeral
   });
 }
 
@@ -857,7 +865,7 @@ async function handleTradeButtons(interaction) {
     if (!selections || !selections.send || !selections.receive) {
       return interaction.followUp({
         content: '❌ No players selected. Please select players from both teams.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -867,7 +875,7 @@ async function handleTradeButtons(interaction) {
     if (sendPlayerIds.length === 0 || receivePlayerIds.length === 0) {
       return interaction.followUp({
         content: '❌ You must select at least one player from each team.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1009,7 +1017,7 @@ async function handleTradeButtons(interaction) {
     if (!embed) {
       return interaction.followUp({
         content: '❌ Cannot find trade data. Please try again.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1020,7 +1028,7 @@ async function handleTradeButtons(interaction) {
     if (!teamMatch) {
       return interaction.followUp({
         content: '❌ Cannot parse trade data. Please try again.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1031,7 +1039,7 @@ async function handleTradeButtons(interaction) {
     if (!teamIdMatch) {
       return interaction.followUp({
         content: '❌ Cannot determine your team.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1074,7 +1082,7 @@ async function handleTradeButtons(interaction) {
     if (!opponentTeamId) {
       return interaction.followUp({
         content: '❌ Cannot determine opponent team. Please try again.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1117,7 +1125,7 @@ async function handleTradeButtons(interaction) {
     if (!result.success) {
       return interaction.followUp({
         content: `❌ Failed to create trade: ${result.error}`,
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1200,7 +1208,7 @@ async function handleTradeResponseButtons(interaction) {
     if (!channelTeamMatch) {
       return interaction.followUp({
         content: '❌ You can only respond to trades in team HQ channels.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1211,7 +1219,7 @@ async function handleTradeResponseButtons(interaction) {
     if (!TESTING_MODE && channelTeamMatch[1] !== teamId) {
       return interaction.followUp({
         content: '❌ You can only respond to trades in your own team HQ channel.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1225,7 +1233,7 @@ async function handleTradeResponseButtons(interaction) {
     if (!tradeDoc.exists) {
       return interaction.followUp({
         content: '❌ Trade not found.',
-        ephemeral: true
+        flags: MessageFlags.Ephemeral
       });
     }
     
@@ -1244,7 +1252,7 @@ async function handleTradeResponseButtons(interaction) {
       if (!result.success) {
         return interaction.followUp({
           content: `❌ Failed to accept trade: ${result.error}`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
       
@@ -1289,7 +1297,7 @@ async function handleTradeResponseButtons(interaction) {
       if (!result.success) {
         return interaction.followUp({
           content: `❌ Failed to decline trade: ${result.error}`,
-          ephemeral: true
+          flags: MessageFlags.Ephemeral
         });
       }
       
@@ -1325,7 +1333,7 @@ async function handleTradeResponseButtons(interaction) {
     console.error('❌ Error handling trade response:', error);
     return interaction.followUp({
       content: '❌ An error occurred while processing your response.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 }
