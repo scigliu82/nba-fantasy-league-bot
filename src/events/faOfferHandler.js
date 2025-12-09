@@ -53,11 +53,16 @@ async function handleGroupSelection(interaction) {
     // Get all available players
     const allPlayers = await getAvailablePlayers(season, { sort_by: 'name' });
     
-    // Filter by group
-    const playersInGroup = getPlayersInGroup({ players: allPlayers.reduce((acc, p) => {
+    // Convert array to object for getPlayersInGroup
+    const playersObject = allPlayers.reduce((acc, p) => {
       acc[p.player_id] = p;
       return acc;
-    }, {}) }, groupId);
+    }, {});
+    
+    // Filter by group
+    const playersInGroup = getPlayersInGroup(playersObject, groupId);
+    
+    console.log(`[FA-OFFER] Group ${groupId}: Found ${playersInGroup.length} players from ${Object.keys(playersObject).length} total`);
     
     if (playersInGroup.length === 0) {
       return interaction.editReply({
@@ -134,9 +139,6 @@ async function handlePlayerSelection(interaction) {
     const teamDoc = await db.collection('teams').doc(teamId).get();
     const team = teamDoc.data();
     
-    // Get minimum salary
-    const minSalary = getMinimumSalary(player.experience);
-    
     // Create modal
     const modal = new ModalBuilder()
       .setCustomId(`fa_offer_contract_${season}_${teamId}_${playerId}`)
@@ -160,18 +162,29 @@ async function handlePlayerSelection(interaction) {
       .setMinLength(1)
       .setMaxLength(1);
     
-    // Annual Salary
+    // Annual Salary (NO minimum - AI will reject low offers)
     const salaryInput = new TextInputBuilder()
       .setCustomId('salary')
-      .setLabel(`Annual Salary (Min: $${(minSalary / 1000000).toFixed(1)}M)`)
+      .setLabel('Annual Salary ($)')
       .setStyle(TextInputStyle.Short)
       .setPlaceholder('5000000')
       .setRequired(true);
     
+    // Contract Option (only for 2+ years)
+    const optionInput = new TextInputBuilder()
+      .setCustomId('option')
+      .setLabel('Contract Option (last year)')
+      .setStyle(TextInputStyle.Short)
+      .setPlaceholder('none / team / player')
+      .setRequired(true)
+      .setMinLength(4)
+      .setMaxLength(6);
+    
     modal.addComponents(
       new ActionRowBuilder().addComponents(fundingInput),
       new ActionRowBuilder().addComponents(yearsInput),
-      new ActionRowBuilder().addComponents(salaryInput)
+      new ActionRowBuilder().addComponents(salaryInput),
+      new ActionRowBuilder().addComponents(optionInput)
     );
     
     await interaction.showModal(modal);
@@ -195,7 +208,13 @@ async function handleContractSubmit(interaction) {
   const parts = interaction.customId.split('_');
   const season = parts[3];
   const teamId = parts[4];
-  const playerId = parts[5];
+  // Player ID può contenere underscore! (es. russel_westbrook)
+  // Prendi tutto dal parte 5 in poi
+  const playerId = parts.slice(5).join('_');
+  
+  console.log(`[FA-OFFER-SUBMIT] CustomId: ${interaction.customId}`);
+  console.log(`[FA-OFFER-SUBMIT] Parts:`, parts);
+  console.log(`[FA-OFFER-SUBMIT] Season: ${season}, TeamId: ${teamId}, PlayerId: ${playerId}`);
   
   try {
     const db = admin.firestore();
@@ -204,13 +223,49 @@ async function handleContractSubmit(interaction) {
     const funding = interaction.fields.getTextInputValue('funding').toLowerCase().trim();
     const years = parseInt(interaction.fields.getTextInputValue('years'));
     const salary = parseInt(interaction.fields.getTextInputValue('salary'));
+    const optionType = interaction.fields.getTextInputValue('option').toLowerCase().trim();
+    
+    // Validate option type
+    if (!['none', 'team', 'player'].includes(optionType)) {
+      return interaction.editReply({
+        content: `❌ **Invalid Option Type**\n\nMust be: \`none\`, \`team\`, or \`player\`\n\nYou entered: \`${optionType}\``
+      });
+    }
+    
+    // Validate option vs years
+    if (years === 1 && optionType !== 'none') {
+      return interaction.editReply({
+        content: `❌ **Invalid Contract**\n\n1-year contracts cannot have Team/Player options.\n\nUse \`none\` for 1-year deals.`
+      });
+    }
+    
+    // Calculate option year (ultimo anno del contratto)
+    let optionYear = null;
+    if (years > 1 && optionType !== 'none') {
+      const currentYear = parseInt(season.split('-')[0]); // 2025
+      const finalYear = currentYear + years - 1; // 2025 + 2 - 1 = 2026
+      optionYear = `${finalYear}-${(finalYear + 1).toString().slice(-2)}`; // "2026-27"
+    }
     
     // Get player
     const player = await getPlayer(season, playerId);
     
+    console.log(`[FA-OFFER] Season: ${season}, PlayerId: ${playerId}`);
+    console.log(`[FA-OFFER] Player found:`, player ? 'YES' : 'NO');
+    if (player) {
+      console.log(`[FA-OFFER] Player status: ${player.status}`);
+      console.log(`[FA-OFFER] Player name: ${player.name}`);
+    }
+    
     if (!player || player.status !== 'available') {
       return interaction.editReply({
-        content: '❌ Player is no longer available!'
+        content: `❌ **Player is no longer available!**\n\n` +
+                 `**Debug Info:**\n` +
+                 `Season: \`${season}\`\n` +
+                 `Player ID: \`${playerId}\`\n` +
+                 `Found: \`${player ? 'Yes' : 'No'}\`\n` +
+                 `Status: \`${player ? player.status : 'N/A'}\`\n\n` +
+                 `This player may have already received an offer or been signed.`
       });
     }
     
@@ -218,12 +273,23 @@ async function handleContractSubmit(interaction) {
     const teamDoc = await db.collection('teams').doc(teamId).get();
     const team = teamDoc.data();
     
-    // Validate
-    const validation = validateOffer(player, team, { funding, years, salary });
+    // NEW VALIDATION with cap/exception locking
+    const { validateOfferCapability, buildDetailedErrorMessage } = require('../../services/capManagementService');
+    
+    const validation = await validateOfferCapability(teamId, salary, funding);
     
     if (!validation.valid) {
+      const errorMessage = buildDetailedErrorMessage(
+        validation,
+        team.name,
+        player.name,
+        salary,
+        years,
+        funding
+      );
+      
       return interaction.editReply({
-        content: `❌ **Invalid Offer**\n\n${validation.errors.join('\n')}`
+        content: errorMessage
       });
     }
     
@@ -240,6 +306,8 @@ async function handleContractSubmit(interaction) {
       years,
       annual_salary: salary,
       funding,
+      option_type: optionType,
+      option_year: optionYear,
       cap_space_at_offer: team.salary_cap?.available_cap || 0
     });
     
@@ -256,6 +324,10 @@ async function handleContractSubmit(interaction) {
     });
     
     // Success embed
+    const optionText = optionType === 'none' ? 'Fully Guaranteed ✅' :
+                       optionType === 'team' ? `Team Option ${optionYear} 🔓` :
+                       `Player Option ${optionYear} 🔓`;
+    
     const successEmbed = new EmbedBuilder()
       .setColor(0x00FF00)
       .setTitle('✅ OFFER SUBMITTED')
@@ -264,6 +336,7 @@ async function handleContractSubmit(interaction) {
         { name: '🏀 Player', value: `${player.name}\n${player.role} • OVR ${player.overall}`, inline: true },
         { name: '💰 Contract', value: `${years} years\n$${(salary / 1000000).toFixed(1)}M/yr\nTotal: $${(salary * years / 1000000).toFixed(1)}M`, inline: true },
         { name: '💳 Funding', value: funding.toUpperCase(), inline: true },
+        { name: '📋 Option', value: optionText, inline: true },
         { name: '⏰ Decision', value: `Player will decide within 48 hours from first offer`, inline: false }
       )
       .setFooter({ text: `Offer ID: ${offer.offer_id}` });
@@ -304,11 +377,8 @@ function validateOffer(player, team, contract) {
     errors.push(`❌ Years must be between 1-4`);
   }
   
-  // Minimum salary
-  const minSalary = getMinimumSalary(player.experience);
-  if (salary < minSalary) {
-    errors.push(`❌ Salary below minimum ($${(minSalary / 1000000).toFixed(1)}M for ${player.experience}yr exp)`);
-  }
+  // NOTE: NO minimum salary validation!
+  // AI algorithm will reject low offers, not the system
   
   // Cap space check
   const availableCap = team.salary_cap?.available_cap || 0;

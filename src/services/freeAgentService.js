@@ -59,6 +59,12 @@ function getPlayersInGroup(players, groupId) {
   if (!group) return [];
   
   return Object.values(players).filter(player => {
+    // Check if player has name
+    if (!player || !player.name || typeof player.name !== 'string') {
+      console.warn('Player without valid name:', player);
+      return false;
+    }
+    
     const firstLetter = player.name[0].toUpperCase();
     return firstLetter >= group.start && firstLetter <= group.end;
   });
@@ -96,12 +102,22 @@ async function importFAMarket(season, playersData) {
 async function getFAMarket(season) {
   const db = admin.firestore();
   
-  const faDoc = await db.collection('free_agents').doc(`fa_${season}`).get();
+  const docId = `fa_${season}`;
+  console.log(`[GET-FA-MARKET] Looking for document: ${docId}`);
+  
+  const faDoc = await db.collection('free_agents').doc(docId).get();
   
   if (!faDoc.exists) {
+    console.log(`[GET-FA-MARKET] Document not found: ${docId}`);
+    
+    // List available documents
+    const snapshot = await db.collection('free_agents').limit(5).get();
+    console.log(`[GET-FA-MARKET] Available documents:`, snapshot.docs.map(d => d.id));
+    
     return null;
   }
   
+  console.log(`[GET-FA-MARKET] Document found: ${docId}`);
   return faDoc.data();
 }
 
@@ -109,11 +125,22 @@ async function getFAMarket(season) {
  * Get single player
  */
 async function getPlayer(season, playerId) {
+  console.log(`[GET-PLAYER] Looking for player: ${playerId} in season: ${season}`);
+  
   const market = await getFAMarket(season);
   
-  if (!market || !market.players[playerId]) {
+  if (!market) {
+    console.log(`[GET-PLAYER] Market not found for season: ${season}`);
     return null;
   }
+  
+  if (!market.players[playerId]) {
+    console.log(`[GET-PLAYER] Player ${playerId} not found in market`);
+    console.log(`[GET-PLAYER] Available players:`, Object.keys(market.players).slice(0, 5));
+    return null;
+  }
+  
+  console.log(`[GET-PLAYER] Player found: ${market.players[playerId].name}, status: ${market.players[playerId].status}`);
   
   return market.players[playerId];
 }
@@ -267,7 +294,11 @@ async function createOffer(offerData) {
       years: offerData.years,
       annual_salary: offerData.annual_salary,
       total_value: offerData.annual_salary * offerData.years,
-      funding: offerData.funding
+      funding: offerData.funding,
+      option: {
+        type: offerData.option_type || 'none',
+        year: offerData.option_year || null
+      }
     },
     
     validation: {
@@ -287,9 +318,10 @@ async function createOffer(offerData) {
   await db.collection('fa_offers').doc(offerId).set(offer);
   
   // Add offer to player's current_offers
+  // NOTE: Player status remains "available" until they sign!
+  // Status only changes to "signed" after 48h timer + player accepts
   await db.collection('free_agents').doc(`fa_${offerData.season}`).update({
     [`players.${offerData.player_id}.current_offers`]: admin.firestore.FieldValue.arrayUnion(offerId),
-    [`players.${offerData.player_id}.status`]: 'offered',
     'updated_at': admin.firestore.FieldValue.serverTimestamp()
   });
   
