@@ -30,9 +30,19 @@ module.exports = {
         .setDescription(
           `**Results:**\n` +
           `✅ Success: ${results.success.length}/30 teams\n` +
+          `🔄 Existing roles used: ${results.existing?.length || 0}/30\n` +
           `❌ Errors: ${results.errors.length}/30 teams`
         )
         .setTimestamp();
+      
+      // Note about existing roles
+      if (results.existing && results.existing.length > 0) {
+        embed.addFields({
+          name: '📝 Note',
+          value: `Found ${results.existing.length} existing GM roles from \`/setup server\` command. Using those instead of creating duplicates.`,
+          inline: false
+        });
+      }
       
       // List successful teams
       if (results.success.length > 0) {

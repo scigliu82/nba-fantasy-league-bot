@@ -46,6 +46,7 @@ const NBA_TEAMS = [
 
 /**
  * Get or create team role
+ * Uses existing GM-{TeamName} roles created by /setup command
  */
 async function getOrCreateTeamRole(guild, teamId, teamName) {
   const db = admin.firestore();
@@ -62,14 +63,17 @@ async function getOrCreateTeamRole(guild, teamId, teamName) {
     }
   }
   
-  // Role doesn't exist, create it
-  const roleName = `${teamName} GM`;
+  // Generate role name using same logic as setup.js
+  // "Los Angeles Lakers" → "Lakers" → "GM-Lakers"
+  const shortName = teamName.split(' ').pop();
+  const roleName = `GM-${shortName}`;
   
-  // Check if role with this name already exists
+  // Find existing role (created by /setup)
   let role = guild.roles.cache.find(r => r.name === roleName);
   
   if (!role) {
-    // Create new role
+    // Role doesn't exist yet, create it
+    // This should rarely happen if /setup was run
     role = await guild.roles.create({
       name: roleName,
       color: getTeamColor(teamId),
@@ -79,6 +83,8 @@ async function getOrCreateTeamRole(guild, teamId, teamName) {
     });
     
     console.log(`✅ Created role: ${roleName}`);
+  } else {
+    console.log(`✅ Found existing role: ${roleName}`);
   }
   
   // Save role ID to database
@@ -275,17 +281,27 @@ async function updateChannelPermissions(guild, teamId, role) {
 
 /**
  * Setup all 30 team roles and permissions (one-time)
+ * Uses existing GM-{TeamName} roles created by /setup command
  */
 async function setupAllTeamRoles(guild) {
   const results = {
     success: [],
-    errors: []
+    errors: [],
+    existing: []
   };
   
   for (const team of NBA_TEAMS) {
     try {
-      // Create role
+      // Find or create role (should already exist from /setup)
       const role = await getOrCreateTeamRole(guild, team.id, team.name);
+      
+      // Check if it was newly created or already existed
+      const shortName = team.name.split(' ').pop();
+      const roleName = `GM-${shortName}`;
+      
+      if (guild.roles.cache.find(r => r.name === roleName && r.id === role.id)) {
+        results.existing.push(team.name);
+      }
       
       // Update channel permissions
       await updateChannelPermissions(guild, team.id, role);
